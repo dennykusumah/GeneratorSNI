@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as _components
 import os
 import re
 import time
@@ -256,6 +257,20 @@ section[data-testid="stFileUploaderDropzone"]:hover {
 section[data-testid="stFileUploaderDropzone"] p,
 section[data-testid="stFileUploaderDropzone"] span {
     color: rgba(255,255,255,0.5) !important;
+}
+section[data-testid="stFileUploaderDropzone"] button {
+    background: rgba(255,255,255,0.92) !important;
+    color: #000000 !important;
+    border: none !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+}
+section[data-testid="stFileUploaderDropzone"] button:hover {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+section[data-testid="stFileUploaderDropzone"] button span {
+    color: #000000 !important;
 }
 div[data-testid="stFileUploaderFile"] {
     background: rgba(99,102,241,0.1) !important;
@@ -794,22 +809,59 @@ if st.session_state.get('_run_process') and st.session_state.get('_target_file')
     # UI Progress — 3 elemen terpisah agar tidak saling tumpuk
     status_placeholder = st.empty()
     progress_bar = st.progress(0)
-    time_placeholder = st.empty()
     start_time = time.time()
-    
-    # Helper Update UI
+
+    # ── Live Timer: iframe via components.html agar <script> benar-benar jalan
+    _TIMER_HTML = """
+    <style>
+      #sni-timer-wrap {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.82rem;
+        color: rgba(110,231,183,0.85);
+        text-align: center;
+        letter-spacing: 1px;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+      }
+    </style>
+    <div id="sni-timer-wrap">
+      &#x23F1; <span id="sni-timer">0 detik</span>
+    </div>
+    <script>
+      var start = Date.now();
+      setInterval(function(){
+        var sec = Math.floor((Date.now() - start) / 1000);
+        var el = document.getElementById('sni-timer');
+        if (!el) return;
+        if (sec < 60) {
+          el.textContent = sec + ' detik';
+        } else {
+          var m = Math.floor(sec / 60);
+          var s = sec % 60;
+          el.textContent = m + ' menit ' + s + ' detik';
+        }
+      }, 1000);
+    </script>
+    """
+    # components.html() render ke iframe — script PASTI jalan, tidak disanitasi
+    _components.html(_TIMER_HTML, height=36)
+    # time_placeholder dipakai hanya untuk waktu final statis setelah selesai
+    time_placeholder = st.empty()
+    # ────────────────────────────────────────────────────────────────────────
+
+    # Helper Update UI — status kiri, persen kanan, sejajar di atas progress bar
     def update_ui(pct, msg):
         status_placeholder.markdown(
-            f'<div style="font-size:0.85rem; color:rgba(165,180,252,0.85); '
-            f'font-family:\'Outfit\',sans-serif; font-weight:500; margin-bottom:0.3rem;">'
-            f'⚡ {msg}</div>',
+            f"<div style='display:flex;justify-content:space-between;align-items:center;"
+            f"font-family:Outfit,sans-serif;font-weight:500;margin-bottom:0.3rem;'>"
+            f"<span style='font-size:.85rem;color:rgba(165,180,252,.9);'>&#x26A1; {msg}</span>"
+            f"<span style='font-size:.85rem;font-family:JetBrains Mono,monospace;"
+            f"font-weight:700;color:rgba(110,231,183,.95);'>{pct}%</span>"
+            f"</div>",
             unsafe_allow_html=True
         )
         progress_bar.progress(pct)
-        time_placeholder.markdown(
-            f'<div class="timer-text">⏱ {get_elapsed_str(start_time)}</div>',
-            unsafe_allow_html=True
-        )
 
     # Pipeline Optimasi
     def run_optimization(input_file, doc_title):
@@ -873,8 +925,14 @@ if st.session_state.get('_run_process') and st.session_state.get('_target_file')
         
         if ok_tr:
             update_ui(100, "✅ Selesai!")
+            final_elapsed = get_elapsed_str(start_time)
+            # Ganti JS timer dengan waktu final statis (berhenti otomatis)
+            time_placeholder.markdown(
+                f'<div class="timer-text">⏱ {final_elapsed}</div>',
+                unsafe_allow_html=True
+            )
             st.session_state['_final_tr_file'] = tr_out
-            st.session_state['_final_time'] = get_elapsed_str(start_time)
+            st.session_state['_final_time'] = final_elapsed
             st.session_state['_show_results'] = True
             # Parse dokumen langsung agar chat langsung siap setelah rerun
             st.session_state['_doc_sections'] = _parse_doc_structure(tr_out)
