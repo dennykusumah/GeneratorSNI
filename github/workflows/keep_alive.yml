@@ -1,0 +1,117 @@
+name: Keep Streamlit Awake
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Create Playwright script
+        run: |
+          cat > wake.js <<'EOF'
+          const { chromium } = require('playwright');
+
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true
+            });
+
+            const page = await browser.newPage({
+              viewport: {
+                width: 1400,
+                height: 900
+              }
+            });
+
+            page.setDefaultTimeout(120000);
+
+            console.log("Opening Streamlit...");
+
+            try {
+
+              await page.goto(
+                "https://generator-rsni.streamlit.app",
+                {
+                  waitUntil: "domcontentloaded",
+                  timeout: 120000
+                }
+              );
+
+              await page.waitForTimeout(5000);
+
+              const wakeButton = page.locator(
+                'button:has-text("Yes, get this app back up!")'
+              );
+
+              if (await wakeButton.count() > 0) {
+
+                console.log("App sleeping.");
+
+                await wakeButton.first().click();
+
+                console.log("Waiting for app to start...");
+
+                await page.waitForLoadState("networkidle");
+
+                await page.waitForTimeout(60000);
+
+              } else {
+
+                console.log("App already awake.");
+
+              }
+
+              await page.screenshot({
+                path: "success.png",
+                fullPage: true
+              });
+
+              console.log("Finished.");
+
+            } catch (err) {
+
+              console.log(err);
+
+              await page.screenshot({
+                path: "error.png",
+                fullPage: true
+              });
+
+              throw err;
+
+            } finally {
+
+              await browser.close();
+
+            }
+
+          })();
+          EOF
+
+      - name: Run script
+        run: node wake.js
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            success.png
+            error.png
